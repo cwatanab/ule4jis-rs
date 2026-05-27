@@ -1,6 +1,6 @@
 [package]
 name = "ule4jis"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "US keyboard → JIS layout emulator (Rust rewrite of Ule4Jis)"
 
