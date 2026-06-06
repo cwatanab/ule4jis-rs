@@ -1,107 +1,100 @@
-// Key state tracking for emulation map lookup.
-// Mirrors the C++ KeyCondition class.
-
-use std::cmp::Ordering;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
 };
 
-/// Modifier keys tracked by KeyCondition.
-const MOD_KEYS: [u16; 6] = [
-    VK_LSHIFT.0,
-    VK_RSHIFT.0,
-    VK_LCONTROL.0,
-    VK_RCONTROL.0,
-    VK_LMENU.0,
-    VK_RMENU.0,
-];
+const MOD_LSHIFT: u8 = 1 << 0;
+const MOD_RSHIFT: u8 = 1 << 1;
+const MOD_LCTRL: u8 = 1 << 2;
+const MOD_RCTRL: u8 = 1 << 3;
+const MOD_LALT: u8 = 1 << 4;
+const MOD_RALT: u8 = 1 << 5;
 
-/// Represents the state of a single key press: which virtual key,
-/// plus whether Shift/Alt/Ctrl are held.
-#[derive(Clone, Debug)]
+#[derive(Debug, Default)]
 pub struct KeyCondition {
-    /// The virtual key code of the pressed key.
     pub last_vkey: u8,
-    /// Modifier key held state, indexed by position in MOD_KEYS.
-    mod_key_state: [bool; 6],
+    mod_bits: u8,
 }
 
 impl KeyCondition {
-    /// Create an empty key condition (no key, no mods).
-    pub fn new() -> Self {
-        Self {
-            last_vkey: 0,
-            mod_key_state: [false; 6],
-        }
-    }
-
-    /// Create a key condition for `vkey`, optionally with Shift held.
+    #[cfg(test)]
     pub fn with_shift(vkey: u8, shift: bool) -> Self {
-        let mut kc = Self::new();
-        kc.last_vkey = vkey;
+        let mut kc = Self {
+            last_vkey: vkey,
+            ..Default::default()
+        };
         if shift {
-            if let Some(idx) = mod_key_index(VK_LSHIFT.0) {
-                kc.mod_key_state[idx] = true;
-            }
+            kc.mod_bits |= MOD_LSHIFT;
         }
         kc
     }
 
-    /// Update internal state when a key is pressed or released.
     pub fn change_key_state(&mut self, vkey: u8, up: bool) {
         self.last_vkey = vkey;
-        if let Some(idx) = mod_key_index(vkey as u16) {
-            self.mod_key_state[idx] = !up;
+        if let Some(bit) = mod_key_bit(vkey as u16) {
+            if up {
+                self.mod_bits &= !bit;
+            } else {
+                self.mod_bits |= bit;
+            }
         }
     }
 
-    /// Get the held state of a specific modifier key.
     pub fn get_mod_key_state(&self, vkey: u16) -> bool {
-        if let Some(idx) = mod_key_index(vkey) {
-            self.mod_key_state[idx]
-        } else {
-            false
+        mod_key_bit(vkey).is_some_and(|bit| self.mod_bits & bit != 0)
+    }
+
+    pub(crate) fn cmp_value(&self) -> u16 {
+        let shift = self.mod_bits & (MOD_LSHIFT | MOD_RSHIFT) != 0;
+        let alt = self.mod_bits & (MOD_LALT | MOD_RALT) != 0;
+        ((shift as u16) << 9) | ((alt as u16) << 8) | self.last_vkey as u16
+    }
+}
+
+fn mod_key_bit(vkey: u16) -> Option<u8> {
+    match vkey {
+        v if v == VK_LSHIFT.0 => Some(MOD_LSHIFT),
+        v if v == VK_RSHIFT.0 => Some(MOD_RSHIFT),
+        v if v == VK_LCONTROL.0 => Some(MOD_LCTRL),
+        v if v == VK_RCONTROL.0 => Some(MOD_RCTRL),
+        v if v == VK_LMENU.0 => Some(MOD_LALT),
+        v if v == VK_RMENU.0 => Some(MOD_RALT),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cmp_value_cases() {
+        let cases = [
+            (b'A', &[][..], 0x0041),
+            (b'2', &[VK_LSHIFT.0 as u8], 0x0232),
+            (b'2', &[VK_RSHIFT.0 as u8], 0x0232),
+            (0x10, &[VK_LMENU.0 as u8], 0x0110),
+            (0x05, &[VK_LSHIFT.0 as u8, VK_RMENU.0 as u8], 0x0305),
+        ];
+
+        for (last_vkey, held, expected) in cases {
+            let mut kc = KeyCondition::default();
+            for vkey in held {
+                kc.change_key_state(*vkey, false);
+            }
+            kc.last_vkey = last_vkey;
+            assert_eq!(kc.cmp_value(), expected);
         }
     }
 
-    /// Build a packed comparison value: shift | alt | vkey.
-    /// Ignores left/right distinction of modifier keys.
-    pub(crate) fn cmp_value(&self) -> u16 {
-        let shift = self.get_mod_key_state(VK_LSHIFT.0) || self.get_mod_key_state(VK_RSHIFT.0);
-        let alt = self.get_mod_key_state(VK_LMENU.0) || self.get_mod_key_state(VK_RMENU.0);
+    #[test]
+    fn modifier_state_cases() {
+        let mut kc = KeyCondition::with_shift(b'2', true);
+        assert!(kc.get_mod_key_state(VK_LSHIFT.0));
+        assert_eq!(kc.last_vkey, b'2');
 
-        let mut val: u16 = 0;
-        val |= if shift { 1 } else { 0 };
-        val <<= 1;
-        val |= if alt { 1 } else { 0 };
-        val <<= 8;
-        val |= self.last_vkey as u16;
-        val
-    }
-}
-
-fn mod_key_index(vkey: u16) -> Option<usize> {
-    MOD_KEYS.iter().position(|&k| k == vkey)
-}
-
-// --- Ord / PartialOrd / Eq / PartialEq ---
-
-impl PartialEq for KeyCondition {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp_value() == other.cmp_value()
-    }
-}
-
-impl Eq for KeyCondition {}
-
-impl PartialOrd for KeyCondition {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for KeyCondition {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.cmp_value().cmp(&other.cmp_value())
+        kc.change_key_state(VK_LSHIFT.0 as u8, true);
+        assert!(!kc.get_mod_key_state(VK_LSHIFT.0));
+        assert!(!KeyCondition::with_shift(b'8', false).get_mod_key_state(VK_LSHIFT.0));
+        assert!(!kc.get_mod_key_state(0xFFFF));
     }
 }

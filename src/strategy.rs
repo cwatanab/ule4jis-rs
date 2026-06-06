@@ -1,177 +1,100 @@
-// US keyboard → JIS layout emulation strategy.
-
-use std::collections::HashMap;
-
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_OEM_1, VK_OEM_102, VK_OEM_3, VK_OEM_4, VK_OEM_5, VK_OEM_6, VK_OEM_7, VK_OEM_MINUS,
     VK_OEM_PLUS,
 };
 
-use crate::decorator::{PressAndReleaseDecorator, ShiftPressDecorator, ShiftReleaseDecorator};
-use crate::emulation::{Emulation, NopEmulation, NormalKeyEmulation};
-use crate::key_condition::KeyCondition;
+use crate::emulation::Emulation;
 
 const VK_OEM_AUTO: u8 = 0xF3;
 const VK_OEM_ENLW: u8 = 0xF4;
 
-/// Fast lookup: `cmp_value() → Emulation`. Keyed by packed u16 so lookups
-/// never require cloning a `KeyCondition`.
-pub type EmulationMap = HashMap<u16, Box<dyn Emulation>>;
+const EMULATION_MAP_LEN: usize = 1024;
 
-pub trait EmulationStrategy {
-    fn build_map(&self, dest: &mut EmulationMap);
+pub type EmulationMap = [Option<Emulation>; EMULATION_MAP_LEN];
+pub const US_ON_JIS_MAP: EmulationMap = build_us_on_jis_map();
+
+#[derive(Clone, Copy)]
+struct Mapping {
+    source: u8,
+    shift: bool,
+    emulation: Emulation,
 }
 
-pub struct USonJISStrategy;
+#[rustfmt::skip]
+const MAPPINGS: [Mapping; 22] = [
+    shift_release(b'2', true, VK_OEM_3.0 as u8), shift_release(b'6', true, VK_OEM_7.0 as u8),
+    normal(b'7', true, b'6'), normal(b'8', true, VK_OEM_1.0 as u8),
+    normal(b'9', true, b'8'), normal(b'0', true, b'9'),
+    normal(VK_OEM_MINUS.0 as u8, true, VK_OEM_102.0 as u8), shift_press(VK_OEM_7.0 as u8, false, VK_OEM_MINUS.0 as u8),
+    normal(VK_OEM_7.0 as u8, true, VK_OEM_PLUS.0 as u8), nop(VK_OEM_AUTO, false),
+    press_and_release_shift(VK_OEM_ENLW, false, VK_OEM_3.0 as u8), nop(VK_OEM_AUTO, true),
+    press_and_release(VK_OEM_ENLW, true, VK_OEM_7.0 as u8), normal(VK_OEM_3.0 as u8, false, VK_OEM_4.0 as u8),
+    normal(VK_OEM_4.0 as u8, false, VK_OEM_6.0 as u8), normal(VK_OEM_3.0 as u8, true, VK_OEM_4.0 as u8),
+    normal(VK_OEM_4.0 as u8, true, VK_OEM_6.0 as u8), shift_release(VK_OEM_PLUS.0 as u8, true, VK_OEM_1.0 as u8),
+    shift_press(VK_OEM_1.0 as u8, false, b'7'), normal(VK_OEM_1.0 as u8, true, b'2'),
+    normal(VK_OEM_6.0 as u8, false, VK_OEM_102.0 as u8), normal(VK_OEM_6.0 as u8, true, VK_OEM_5.0 as u8),
+];
 
-impl EmulationStrategy for USonJISStrategy {
-    fn build_map(&self, dest: &mut EmulationMap) {
-        dest.clear();
+const fn map(source: u8, shift: bool, emulation: Emulation) -> Mapping {
+    Mapping {
+        source,
+        shift,
+        emulation,
+    }
+}
 
-        // @ — US Shift+2 → JIS @, release shift
-        dest.insert(
-            KeyCondition::with_shift(b'2', true).cmp_value(),
-            Box::new(ShiftReleaseDecorator::new(Box::new(
-                NormalKeyEmulation::new(VK_OEM_3.0 as u8),
-            ))),
-        );
+const fn normal(source: u8, shift: bool, vkey: u8) -> Mapping {
+    map(source, shift, Emulation::Normal { vkey })
+}
 
-        // ^ — US Shift+6 → JIS ^, release shift
-        dest.insert(
-            KeyCondition::with_shift(b'6', true).cmp_value(),
-            Box::new(ShiftReleaseDecorator::new(Box::new(
-                NormalKeyEmulation::new(VK_OEM_7.0 as u8),
-            ))),
-        );
+const fn nop(source: u8, shift: bool) -> Mapping {
+    map(source, shift, Emulation::Nop)
+}
 
-        // & — US Shift+7 → JIS 6 key
-        dest.insert(
-            KeyCondition::with_shift(b'7', true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(b'6')),
-        );
+const fn shift_press(source: u8, shift: bool, vkey: u8) -> Mapping {
+    map(source, shift, Emulation::ShiftPress { vkey })
+}
 
-        // * — US Shift+8 → JIS : key
-        dest.insert(
-            KeyCondition::with_shift(b'8', true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_1.0 as u8)),
-        );
+const fn shift_release(source: u8, shift: bool, vkey: u8) -> Mapping {
+    map(source, shift, Emulation::ShiftRelease { vkey })
+}
 
-        // ( — US Shift+9 → JIS 8 key
-        dest.insert(
-            KeyCondition::with_shift(b'9', true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(b'8')),
-        );
+const fn press_and_release(source: u8, shift: bool, vkey: u8) -> Mapping {
+    map(source, shift, Emulation::PressAndRelease { vkey })
+}
 
-        // ) — US Shift+0 → JIS 9 key
-        dest.insert(
-            KeyCondition::with_shift(b'0', true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(b'9')),
-        );
+const fn press_and_release_shift(source: u8, shift: bool, vkey: u8) -> Mapping {
+    map(source, shift, Emulation::PressAndReleaseShift { vkey })
+}
 
-        // _ — US Shift+- → JIS \
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_MINUS.0 as u8, true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_102.0 as u8)),
-        );
+const fn build_us_on_jis_map() -> EmulationMap {
+    let mut dest = [None; EMULATION_MAP_LEN];
+    let mut i = 0;
+    while i < MAPPINGS.len() {
+        let mapping = MAPPINGS[i];
+        dest[map_key(mapping.source, mapping.shift)] = Some(mapping.emulation);
+        i += 1;
+    }
+    dest
+}
 
-        // = — US = key → Shift + JIS -
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_7.0 as u8, false).cmp_value(),
-            Box::new(ShiftPressDecorator::new(Box::new(NormalKeyEmulation::new(
-                VK_OEM_MINUS.0 as u8,
-            )))),
-        );
+const fn map_key(source: u8, shift: bool) -> usize {
+    (if shift { 0x200 } else { 0 }) | source as usize
+}
 
-        // + — US Shift+= → JIS +
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_7.0 as u8, true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_PLUS.0 as u8)),
-        );
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        // ` — US ` (VK_OEM_AUTO) → nop
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_AUTO, false).cmp_value(),
-            Box::new(NopEmulation),
-        );
-
-        // ` — US ` via VK_OEM_ENLW → press-and-release Shift + VK_OEM_3
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_ENLW, false).cmp_value(),
-            Box::new(PressAndReleaseDecorator::new(Box::new(
-                ShiftPressDecorator::new(Box::new(NormalKeyEmulation::new(VK_OEM_3.0 as u8))),
-            ))),
-        );
-
-        // ~ — US Shift+` (VK_OEM_AUTO) → nop
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_AUTO, true).cmp_value(),
-            Box::new(NopEmulation),
-        );
-
-        // ~ — US Shift+` via VK_OEM_ENLW → press-and-release VK_OEM_7
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_ENLW, true).cmp_value(),
-            Box::new(PressAndReleaseDecorator::new(Box::new(
-                NormalKeyEmulation::new(VK_OEM_7.0 as u8),
-            ))),
-        );
-
-        // [ — US [ → JIS [
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_3.0 as u8, false).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_4.0 as u8)),
-        );
-
-        // ] — US ] → JIS ]
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_4.0 as u8, false).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_6.0 as u8)),
-        );
-
-        // { — US Shift+[ → JIS [
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_3.0 as u8, true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_4.0 as u8)),
-        );
-
-        // } — US Shift+] → JIS ]
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_4.0 as u8, true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_6.0 as u8)),
-        );
-
-        // : — US Shift+= → JIS : without shift
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_PLUS.0 as u8, true).cmp_value(),
-            Box::new(ShiftReleaseDecorator::new(Box::new(
-                NormalKeyEmulation::new(VK_OEM_1.0 as u8),
-            ))),
-        );
-
-        // ' — US ; → JIS 7 with Shift
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_1.0 as u8, false).cmp_value(),
-            Box::new(ShiftPressDecorator::new(Box::new(NormalKeyEmulation::new(
-                b'7',
-            )))),
-        );
-
-        // " — US Shift+; → JIS 2
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_1.0 as u8, true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(b'2')),
-        );
-
-        // \ — US \ → JIS \
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_6.0 as u8, false).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_102.0 as u8)),
-        );
-
-        // | — US Shift+\ → JIS |
-        dest.insert(
-            KeyCondition::with_shift(VK_OEM_6.0 as u8, true).cmp_value(),
-            Box::new(NormalKeyEmulation::new(VK_OEM_5.0 as u8)),
-        );
+    #[test]
+    fn all_declared_mappings_are_present_once() {
+        let map = US_ON_JIS_MAP;
+        assert_eq!(map.iter().flatten().count(), MAPPINGS.len());
+        for mapping in MAPPINGS {
+            assert_eq!(
+                map[map_key(mapping.source, mapping.shift)],
+                Some(mapping.emulation)
+            );
+        }
     }
 }
