@@ -3,6 +3,8 @@ name = "ule4jis"
 version = "1.0.1"
 edition = "2021"
 description = "US keyboard → JIS layout emulator (Rust rewrite of Ule4Jis)"
+repository = "https://github.com/cwatanab/ule4jis-rs"
+readme = "README.md"
 
 [dependencies]
 windows = { version = "0.58", features = [

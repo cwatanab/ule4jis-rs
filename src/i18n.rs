@@ -14,8 +14,8 @@ pub enum Lang {
 static CURRENT_LANG: AtomicU8 = AtomicU8::new(Lang::Ja as u8);
 
 pub fn init() {
-    let lang = match std::env::var("ULE4JIS_LANG").as_deref() {
-        Ok("en") | Ok("EN") | Ok("En") => Lang::En,
+    let lang = match std::env::var("ULE4JIS_LANG") {
+        Ok(v) if v.eq_ignore_ascii_case("en") => Lang::En,
         _ => Lang::Ja,
     };
     CURRENT_LANG.store(lang as u8, Ordering::Relaxed);
