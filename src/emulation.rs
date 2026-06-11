@@ -20,11 +20,19 @@ impl Emulation {
             Emulation::Nop => {}
             Emulation::ShiftPress { vkey } => {
                 if !up {
-                    inject(VK_LSHIFT.0 as u8, false);
+                    let lshift = cond.get_mod_key_state(VK_LSHIFT.0);
+                    let rshift = cond.get_mod_key_state(VK_RSHIFT.0);
+                    if !lshift && !rshift {
+                        inject(VK_LSHIFT.0 as u8, false);
+                    }
                     inject(*vkey, false);
-                    inject(VK_LSHIFT.0 as u8, true);
                 } else {
                     inject(*vkey, true);
+                    let lshift = cond.get_mod_key_state(VK_LSHIFT.0);
+                    let rshift = cond.get_mod_key_state(VK_RSHIFT.0);
+                    if !lshift && !rshift {
+                        inject(VK_LSHIFT.0 as u8, true);
+                    }
                 }
             }
             Emulation::ShiftRelease { vkey } => {
@@ -38,14 +46,16 @@ impl Emulation {
                         inject(VK_RSHIFT.0 as u8, true);
                     }
                     inject(*vkey, false);
+                } else {
+                    inject(*vkey, true);
+                    let lshift = cond.get_mod_key_state(VK_LSHIFT.0);
+                    let rshift = cond.get_mod_key_state(VK_RSHIFT.0);
                     if lshift {
                         inject(VK_LSHIFT.0 as u8, false);
                     }
                     if rshift {
                         inject(VK_RSHIFT.0 as u8, false);
                     }
-                } else {
-                    inject(*vkey, true);
                 }
             }
             Emulation::PressAndRelease { vkey } => {
@@ -119,21 +129,33 @@ mod tests {
                 shift_press(0x41),
                 false,
                 0,
-                &[(LS, false), (0x41, false), (LS, true)],
+                &[(LS, false), (0x41, false)],
             ),
-            (shift_press(0x41), true, 0, &[(0x41, true)]),
+            (shift_press(0x41), true, 0, &[(0x41, true), (LS, true)]),
             (shift_release(0x30), false, 0, &[(0x30, false)]),
             (
                 shift_release(0x30),
                 false,
                 L_HELD,
-                &[(LS, true), (0x30, false), (LS, false)],
+                &[(LS, true), (0x30, false)],
+            ),
+            (
+                shift_release(0x30),
+                true,
+                L_HELD,
+                &[(0x30, true), (LS, false)],
             ),
             (
                 shift_release(0x30),
                 false,
                 R_HELD,
-                &[(RS, true), (0x30, false), (RS, false)],
+                &[(RS, true), (0x30, false)],
+            ),
+            (
+                shift_release(0x30),
+                true,
+                R_HELD,
+                &[(0x30, true), (RS, false)],
             ),
             (
                 shift_release(0x30),
@@ -143,6 +165,14 @@ mod tests {
                     (LS, true),
                     (RS, true),
                     (0x30, false),
+                ],
+            ),
+            (
+                shift_release(0x30),
+                true,
+                L_HELD | R_HELD,
+                &[
+                    (0x30, true),
                     (LS, false),
                     (RS, false),
                 ],

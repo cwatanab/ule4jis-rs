@@ -1,5 +1,6 @@
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
+    VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
+    VK_SHIFT,
 };
 
 const MOD_LSHIFT: u8 = 1 << 0;
@@ -52,11 +53,11 @@ impl KeyCondition {
 
 fn mod_key_bit(vkey: u16) -> Option<u8> {
     match vkey {
-        v if v == VK_LSHIFT.0 => Some(MOD_LSHIFT),
+        v if v == VK_LSHIFT.0 || v == VK_SHIFT.0 => Some(MOD_LSHIFT),
         v if v == VK_RSHIFT.0 => Some(MOD_RSHIFT),
-        v if v == VK_LCONTROL.0 => Some(MOD_LCTRL),
+        v if v == VK_LCONTROL.0 || v == VK_CONTROL.0 => Some(MOD_LCTRL),
         v if v == VK_RCONTROL.0 => Some(MOD_RCTRL),
-        v if v == VK_LMENU.0 => Some(MOD_LALT),
+        v if v == VK_LMENU.0 || v == VK_MENU.0 => Some(MOD_LALT),
         v if v == VK_RMENU.0 => Some(MOD_RALT),
         _ => None,
     }
