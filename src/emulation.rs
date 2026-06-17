@@ -125,12 +125,7 @@ mod tests {
             (normal(0x41), false, 0, &[(0x41, false)][..]),
             (normal(0x41), true, 0, &[(0x41, true)]),
             (N, false, 0, &[]),
-            (
-                shift_press(0x41),
-                false,
-                0,
-                &[(LS, false), (0x41, false)],
-            ),
+            (shift_press(0x41), false, 0, &[(LS, false), (0x41, false)]),
             (shift_press(0x41), true, 0, &[(0x41, true), (LS, true)]),
             (shift_release(0x30), false, 0, &[(0x30, false)]),
             (
@@ -161,21 +156,13 @@ mod tests {
                 shift_release(0x30),
                 false,
                 L_HELD | R_HELD,
-                &[
-                    (LS, true),
-                    (RS, true),
-                    (0x30, false),
-                ],
+                &[(LS, true), (RS, true), (0x30, false)],
             ),
             (
                 shift_release(0x30),
                 true,
                 L_HELD | R_HELD,
-                &[
-                    (0x30, true),
-                    (LS, false),
-                    (RS, false),
-                ],
+                &[(0x30, true), (LS, false), (RS, false)],
             ),
             (shift_release(0x30), true, 0, &[(0x30, true)]),
             (
