@@ -10,7 +10,7 @@ const MOD_RCTRL: u8 = 1 << 3;
 const MOD_LALT: u8 = 1 << 4;
 const MOD_RALT: u8 = 1 << 5;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct KeyCondition {
     pub last_vkey: u8,
     mod_bits: u8,

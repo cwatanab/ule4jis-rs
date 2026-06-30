@@ -9,10 +9,11 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    GetCursorPos, PostMessageW, PostQuitMessage, RegisterClassExW, SetForegroundWindow,
-    TrackPopupMenu, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HMENU, MENU_ITEM_FLAGS, MF_GRAYED,
-    MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN, TPM_RIGHTALIGN, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_COMMAND, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSEXW,
+    GetCursorPos, GetForegroundWindow, PostMessageW, PostQuitMessage, RegisterClassExW,
+    SetForegroundWindow, TrackPopupMenu, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HMENU,
+    MENU_ITEM_FLAGS, MF_GRAYED, MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN, TPM_RIGHTALIGN,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_COMMAND, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL,
+    WM_RBUTTONUP, WNDCLASSEXW,
 };
 
 use crate::key_emulator::InputBackend;
@@ -183,6 +184,7 @@ pub fn show_context_menu(hwnd: HWND, emulator_running: bool, input_backend: Inpu
     // before showing the menu, and a benign message posted afterwards, or the
     // menu will not dismiss when the user clicks outside of it.
     unsafe {
+        let prev_foreground = GetForegroundWindow();
         let _ = SetForegroundWindow(hwnd);
         let _ = TrackPopupMenu(
             menu.0,
@@ -194,6 +196,11 @@ pub fn show_context_menu(hwnd: HWND, emulator_running: bool, input_backend: Inpu
             None,
         );
         let _ = PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0));
+
+        let current_foreground = GetForegroundWindow();
+        if current_foreground == hwnd {
+            let _ = SetForegroundWindow(prev_foreground);
+        }
     }
 }
 
