@@ -71,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "ule4jis"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "windows",
  "winres",

@@ -44,12 +44,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(Err(e)) =
-        App::with_mut(|app| tray::add_tray_icon(&mut app.tray, hwnd, i18n::tr("tray.tooltip")))
+        App::with_mut(|app| tray::add_tray_icon(&mut app.tray, hwnd, i18n::tr_wide("tray.tooltip")))
     {
         return Err(e.into());
     }
 
     App::with_mut(|app| app.start_with_error("error.hook_failed"));
+
+    // Trim working set to minimize memory usage
+    unsafe {
+        let _ = windows::Win32::System::Threading::SetProcessWorkingSetSize(
+            windows::Win32::System::Threading::GetCurrentProcess(),
+            usize::MAX,
+            usize::MAX,
+        );
+    }
 
     let mut msg = MSG::default();
     loop {
@@ -59,6 +68,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         unsafe {
             DispatchMessageW(&msg);
+        }
+        // Trim working set after processing each message to keep memory footprint minimal!
+        unsafe {
+            let _ = windows::Win32::System::Threading::SetProcessWorkingSetSize(
+                windows::Win32::System::Threading::GetCurrentProcess(),
+                usize::MAX,
+                usize::MAX,
+            );
         }
     }
 

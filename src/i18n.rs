@@ -55,8 +55,43 @@ pub fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
 
-pub fn tr_wide(key: &str) -> Vec<u16> {
-    to_wide(tr(key))
+pub fn tr_wide(key: &str) -> PCWSTR {
+    let lang = get_lang();
+    match key {
+        "tray.tooltip" => match lang {
+            Lang::Ja => windows::core::w!("Ule4Jis — US→JIS エミュレータ"),
+            Lang::En => windows::core::w!("Ule4Jis — US→JIS Emulator"),
+        },
+        "tray.start" => match lang {
+            Lang::Ja => windows::core::w!("開始"),
+            Lang::En => windows::core::w!("Start"),
+        },
+        "tray.stop" => match lang {
+            Lang::Ja => windows::core::w!("停止"),
+            Lang::En => windows::core::w!("Stop"),
+        },
+        "tray.input_backend.sendinput" => match lang {
+            Lang::Ja => windows::core::w!("入力方式: SendInput"),
+            Lang::En => windows::core::w!("Input: SendInput"),
+        },
+        "tray.input_backend.keybd_event" => match lang {
+            Lang::Ja => windows::core::w!("入力方式: keybd_event"),
+            Lang::En => windows::core::w!("Input: keybd_event"),
+        },
+        "tray.exit" => match lang {
+            Lang::Ja => windows::core::w!("終了"),
+            Lang::En => windows::core::w!("Exit"),
+        },
+        "error.hook_failed" => match lang {
+            Lang::Ja => windows::core::w!("キーボードフックの開始に失敗しました"),
+            Lang::En => windows::core::w!("Failed to start keyboard hook"),
+        },
+        "error.start_failed" => match lang {
+            Lang::Ja => windows::core::w!("開始に失敗しました"),
+            Lang::En => windows::core::w!("Failed to start"),
+        },
+        _ => windows::core::w!("???"),
+    }
 }
 
 pub(crate) fn show_error(title_key: &str, msg: &str) {

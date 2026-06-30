@@ -39,7 +39,7 @@ impl Menu {
 
     fn append(&self, flags: MENU_ITEM_FLAGS, id: usize, text_key: &str) -> Result<(), ()> {
         let wide = crate::i18n::tr_wide(text_key);
-        unsafe { AppendMenuW(self.0, flags, id, PCWSTR(wide.as_ptr())) }.map_err(|_| ())
+        unsafe { AppendMenuW(self.0, flags, id, wide) }.map_err(|_| ())
     }
 
     fn item(&self, id: usize, text_key: &str, enabled: bool) -> Result<(), ()> {
@@ -111,11 +111,9 @@ pub fn init_tray() -> Result<HWND, windows::core::Error> {
 pub fn add_tray_icon(
     state: &mut TrayState,
     hwnd: HWND,
-    tooltip: &str,
+    tooltip: PCWSTR,
 ) -> Result<(), windows::core::Error> {
     let icon = crate::icon::get_icon(true).ok_or_else(windows::core::Error::from_win32)?;
-
-    let tip_wide = crate::i18n::to_wide(tooltip);
 
     let mut nid = NOTIFYICONDATAW {
         cbSize: mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -126,8 +124,16 @@ pub fn add_tray_icon(
         ..Default::default()
     };
 
-    let max_len = nid.szTip.len().min(tip_wide.len());
-    nid.szTip[..max_len].copy_from_slice(&tip_wide[..max_len]);
+    let mut i = 0;
+    while i < nid.szTip.len() - 1 {
+        let val = unsafe { *tooltip.0.add(i) };
+        if val == 0 {
+            break;
+        }
+        nid.szTip[i] = val;
+        i += 1;
+    }
+    nid.szTip[i] = 0;
 
     let success = unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
     if !success.as_bool() {
