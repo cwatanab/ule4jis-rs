@@ -8,12 +8,12 @@ use windows::Win32::UI::Shell::{
     NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    GetCursorPos, GetForegroundWindow, PostMessageW, PostQuitMessage, RegisterClassExW,
-    SetForegroundWindow, TrackPopupMenu, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HMENU,
-    MENU_ITEM_FLAGS, MF_GRAYED, MF_SEPARATOR, MF_STRING, TPM_BOTTOMALIGN, TPM_RIGHTALIGN,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_COMMAND, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL,
-    WM_RBUTTONUP, WNDCLASSEXW,
+    AppendMenuW, ChangeWindowMessageFilterEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
+    DestroyMenu, DestroyWindow, GetCursorPos, GetForegroundWindow, PostMessageW, PostQuitMessage,
+    RegisterClassExW, RegisterWindowMessageW, SetForegroundWindow, TrackPopupMenu, CS_HREDRAW,
+    CS_VREDRAW, CW_USEDEFAULT, HMENU, MENU_ITEM_FLAGS, MF_GRAYED, MF_SEPARATOR, MF_STRING,
+    MSGFLT_ALLOW, TPM_BOTTOMALIGN, TPM_RIGHTALIGN, WINDOW_EX_STYLE, WINDOW_STYLE, WM_COMMAND,
+    WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WNDCLASSEXW,
 };
 
 use crate::key_emulator::InputBackend;
@@ -106,7 +106,24 @@ pub fn init_tray() -> Result<HWND, windows::core::Error> {
         return Err(windows::core::Error::from_win32());
     }
 
+    let taskbar_msg = get_taskbar_created_msg();
+    if taskbar_msg != 0 {
+        unsafe {
+            let _ = ChangeWindowMessageFilterEx(hwnd, taskbar_msg, MSGFLT_ALLOW, None);
+        }
+    }
+    unsafe {
+        let _ = ChangeWindowMessageFilterEx(hwnd, WM_TRAY_CALLBACK, MSGFLT_ALLOW, None);
+    }
+
     Ok(hwnd)
+}
+
+pub fn get_taskbar_created_msg() -> u32 {
+    use std::sync::OnceLock;
+    static WM_TASKBARCREATED: OnceLock<u32> = OnceLock::new();
+    *WM_TASKBARCREATED
+        .get_or_init(|| unsafe { RegisterWindowMessageW(windows::core::w!("TaskbarCreated")) })
 }
 
 pub fn add_tray_icon(
@@ -152,6 +169,20 @@ pub fn update_tray_icon(state: &mut TrayState, active: bool) {
             nid.hIcon = icon;
             nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
             unsafe {
+                let _ = Shell_NotifyIconW(NIM_MODIFY, nid);
+            }
+        }
+    }
+}
+
+pub fn restore_tray_icon(state: &mut TrayState, active: bool) {
+    if let Some(nid) = state.nid.as_mut() {
+        if let Some(icon) = crate::icon::get_icon(active) {
+            nid.hIcon = icon;
+        }
+        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+        unsafe {
+            if !Shell_NotifyIconW(NIM_ADD, nid).as_bool() {
                 let _ = Shell_NotifyIconW(NIM_MODIFY, nid);
             }
         }
@@ -241,6 +272,12 @@ unsafe extern "system" fn tray_window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    let taskbar_created = get_taskbar_created_msg();
+    if taskbar_created != 0 && msg == taskbar_created {
+        crate::app::on_taskbar_created();
+        return LRESULT(0);
+    }
+
     match msg {
         WM_TRAY_CALLBACK => {
             match lparam.0 as u32 {

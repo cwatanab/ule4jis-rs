@@ -100,3 +100,10 @@ pub fn on_tray_exit() {
     App::shutdown_global();
     unsafe { PostQuitMessage(0) };
 }
+
+pub fn on_taskbar_created() {
+    App::with_mut(|app| {
+        let running = app.emulator.is_started();
+        tray::restore_tray_icon(&mut app.tray, running);
+    });
+}
